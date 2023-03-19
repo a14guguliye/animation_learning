@@ -48,39 +48,120 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage>
-    with SingleTickerProviderStateMixin {
-  int _counter = 0;
+enum CircleSide { left, right }
 
-  late AnimationController controller;
-  late Animation<double> animation;
+extension ToPath on CircleSide {
+  Path toPath(Size size) {
+    final path = Path();
+
+    late Offset offset;
+
+    late bool clockWise;
+
+    switch (this) {
+      case CircleSide.left:
+        path.moveTo(size.width, 0);
+        offset = Offset(size.width, size.height);
+        clockWise = false;
+        break;
+      case CircleSide.right:
+        path.moveTo(0, 0);
+        offset = Offset(0, size.height);
+        clockWise = true;
+        break;
+    }
+
+    path.arcToPoint(offset,
+        radius: Radius.elliptical(size.width / 2, size.height / 2),
+        clockwise: clockWise);
+
+    path.close();
+
+    return path;
+  }
+}
+
+class HalfCircleClipper extends CustomClipper<Path> {
+  final CircleSide side;
+
+  HalfCircleClipper({required this.side});
+  @override
+  Path getClip(Size size) {
+    return side.toPath(size);
+  }
 
   @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) {
+    return true;
+  }
+}
+
+class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
+  late final AnimationController _counterClockwiseRotationController;
+  late Animation<double> _counterClockwiseRotationAnimation;
+
+  late final AnimationController _flipController;
+  late Animation<double> _flipAnimation;
+
+  // ignore: unnecessary_overrides
+  @override
   void dispose() {
-    controller.dispose();
+    _counterClockwiseRotationController.dispose();
+    _flipController.dispose();
     super.dispose();
   }
 
   @override
   void initState() {
     super.initState();
+    _counterClockwiseRotationController =
+        AnimationController(vsync: this, duration: const Duration(seconds: 2));
 
-    controller =
-        AnimationController(vsync: this, duration: const Duration(seconds: 1));
+    _counterClockwiseRotationAnimation = Tween<double>(begin: 0, end: -pi / 2)
+        .animate(CurvedAnimation(
+            parent: _counterClockwiseRotationController,
+            curve: Curves.bounceOut));
 
-    animation = Tween(begin: 0.0, end: 2 * pi).animate(controller);
+    _flipController =
+        AnimationController(vsync: this, duration: const Duration(seconds: 2));
+    _flipAnimation = Tween<double>(begin: 0, end: pi).animate(
+        CurvedAnimation(parent: _flipController, curve: Curves.bounceOut));
+    _counterClockwiseRotationController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _flipAnimation = Tween<double>(
+                begin: _flipAnimation.value, end: _flipAnimation.value - pi)
+            .animate(CurvedAnimation(
+                parent: _flipController, curve: Curves.bounceOut));
 
-    controller.repeat();
+        _flipController
+          ..reset()
+          ..forward();
+
+        _flipController.addStatusListener((status) {
+          if (status == AnimationStatus.completed) {
+            _counterClockwiseRotationAnimation = Tween<double>(
+                    begin: _counterClockwiseRotationAnimation.value,
+                    end: _counterClockwiseRotationAnimation.value - pi / 2)
+                .animate(CurvedAnimation(
+                    parent: _counterClockwiseRotationController,
+                    curve: Curves.bounceOut));
+
+            _counterClockwiseRotationController
+              ..reset()
+              ..forward();
+          }
+        });
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    Future.delayed(const Duration(seconds: 2), () {
+      _counterClockwiseRotationController.reset();
+      _counterClockwiseRotationController.forward();
+    });
+
     return Scaffold(
       appBar: AppBar(
         // Here we take the value from the MyHomePage object that was created by
@@ -89,26 +170,51 @@ class _MyHomePageState extends State<MyHomePage>
       ),
       body: Center(
         child: AnimatedBuilder(
-            animation: controller,
+            animation: _counterClockwiseRotationAnimation,
             builder: (context, _) {
               return Transform(
                 alignment: Alignment.center,
-                transform: Matrix4.identity()..rotateY(animation.value),
-                child: Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.blue,
-                    borderRadius: BorderRadius.circular(10),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.5),
-                        spreadRadius: 5,
-                        offset: Offset(0, 3),
-                        blurRadius: 7,
-                      )
-                    ],
-                  ),
+                transform: Matrix4.identity()
+                  ..rotateZ(_counterClockwiseRotationAnimation.value),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    AnimatedBuilder(
+                        animation: _flipAnimation,
+                        builder: (context, _) {
+                          return Transform(
+                            alignment: Alignment.centerRight,
+                            transform: Matrix4.identity()
+                              ..rotateY(_flipAnimation.value),
+                            child: ClipPath(
+                              clipper: HalfCircleClipper(side: CircleSide.left),
+                              child: Container(
+                                width: 100,
+                                height: 100,
+                                color: const Color(0xff0057b7),
+                              ),
+                            ),
+                          );
+                        }),
+                    AnimatedBuilder(
+                        animation: _flipAnimation,
+                        builder: (context, _) {
+                          return Transform(
+                            alignment: Alignment.centerLeft,
+                            transform: Matrix4.identity()
+                              ..rotateY(_flipAnimation.value),
+                            child: ClipPath(
+                              clipper:
+                                  HalfCircleClipper(side: CircleSide.right),
+                              child: Container(
+                                width: 100,
+                                height: 100,
+                                color: Colors.yellow,
+                              ),
+                            ),
+                          );
+                        }),
+                  ],
                 ),
               );
             }),
